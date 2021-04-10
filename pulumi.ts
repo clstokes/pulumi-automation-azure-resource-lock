@@ -42,6 +42,8 @@ const resourceGroupProgram = async () => {
  * destroy resource group lock
  */
 const unlock = async (): Promise<Stack> => {
+    const message = "Removing resource group lock";
+    banner(message);
     const lockProgramArgs: InlineProgramArgs = {
         program: lockProgram,
         projectName: "resource-group-lock",
@@ -49,7 +51,7 @@ const unlock = async (): Promise<Stack> => {
     };
     const lockStack = await LocalWorkspace.createOrSelectStack(lockProgramArgs);
     await lockStack.destroy({
-        message: "Removing resource group lock",
+        message: message,
         onOutput: console.info,
     });
     return lockStack;
@@ -59,13 +61,25 @@ const unlock = async (): Promise<Stack> => {
  * update resource group lock
  */
 const lock = async (lockStack: Stack, location: string, resourceGroupName: string) => {
+    const message = "Adding resource group lock";
+    banner(message);
     await lockStack.setConfig(locationConfigKey, { value: location });
     await lockStack.setConfig("resourceGroupName", { value: resourceGroupName });
     await lockStack.up({
-        message: "Adding resource group lock",
+        message: message,
         onOutput: console.info,
     });
 };
+
+/**
+ * Print a message to the console with a "banner" outline.
+ */
+function banner(...message: string[]) {
+    console.log(`################################################################################`);
+    console.log(`#`);
+    message.forEach(it => console.log(`# ${it}`));
+    console.log(`#`);
+}
 
 const run = async () => {
 
@@ -88,9 +102,8 @@ const run = async () => {
         /**
          * destroy main pulumi project
          */
-        console.info("destroying stack...");
+        banner("destroying main stack...");
         await mainStack.destroy({ onOutput: console.info });
-        console.info("stack destroy complete");
         process.exit(0);
     }
 
@@ -98,11 +111,8 @@ const run = async () => {
      * update main pulumi project
      */
     await mainStack.setConfig(locationConfigKey, { value: location });
-
-    console.info("updating stack...");
+    banner("updating main stack...");
     const upRes = await mainStack.up({ onOutput: console.info });
-    console.log(`update summary: \n${JSON.stringify(upRes.summary.resourceChanges, null, 4)}`);
-    console.log(`resourceGroupName: ${upRes.outputs.resourceGroupName.value}`);
 
     /**
      * Add resource group lock
