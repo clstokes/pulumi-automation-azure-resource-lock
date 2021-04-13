@@ -1,5 +1,5 @@
 import * as pulumi from "@pulumi/pulumi";
-import { InlineProgramArgs, LocalWorkspace, Stack } from "@pulumi/pulumi/x/automation";
+import { InlineProgramArgs, LocalWorkspace, Stack, UpResult } from "@pulumi/pulumi/x/automation";
 
 import * as authorizationEnums from "@pulumi/azure-native/types/enums/authorization";
 import * as authorization from "@pulumi/azure-native/authorization";
@@ -22,6 +22,8 @@ if (args.length > 0 && args[0]) {
 
 /**
  * Inline programs
+ * 
+ * Alternatively, a LocalProgram could be used to refer to a project on a local or remote path.
  */
 const lockProgram = async () => {
     const config = new pulumi.Config();
@@ -43,7 +45,7 @@ const resourceGroupProgram = async () => {
  */
 const unlock = async (): Promise<Stack> => {
     const message = "Removing resource group lock";
-    banner(message);
+    logBanner(message);
     const lockProgramArgs: InlineProgramArgs = {
         program: lockProgram,
         projectName: "resource-group-lock",
@@ -62,7 +64,7 @@ const unlock = async (): Promise<Stack> => {
  */
 const lock = async (lockStack: Stack, location: string, resourceGroupName: string) => {
     const message = "Adding resource group lock";
-    banner(message);
+    logBanner(message);
     await lockStack.setConfig(locationConfigKey, { value: location });
     await lockStack.setConfig("resourceGroupName", { value: resourceGroupName });
     await lockStack.up({
@@ -74,11 +76,21 @@ const lock = async (lockStack: Stack, location: string, resourceGroupName: strin
 /**
  * Print a message to the console with a "banner" outline.
  */
-function banner(...message: string[]) {
+function logBanner(...message: string[]) {
     console.log(`################################################################################`);
     console.log(`#`);
     message.forEach(it => console.log(`# ${it}`));
     console.log(`#`);
+    console.log(``);
+}
+
+function logError(...message: string[]) {
+    console.log(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`);
+    console.log(`!`);
+    message.forEach(it => console.log(`! ${it}`));
+    console.log(`!`);
+    console.log(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`);
+    console.log(``);
 }
 
 const run = async () => {
@@ -102,7 +114,7 @@ const run = async () => {
         /**
          * destroy main pulumi project
          */
-        banner("destroying main stack...");
+        logBanner("destroying main stack...");
         await mainStack.destroy({ onOutput: console.info });
         process.exit(0);
     }
@@ -110,14 +122,26 @@ const run = async () => {
     /**
      * update main pulumi project
      */
-    await mainStack.setConfig(locationConfigKey, { value: location });
-    banner("updating main stack...");
-    const upRes = await mainStack.up({ onOutput: console.info });
-
-    /**
-     * Add resource group lock
-     */
-    await lock(lockStack, (await mainStack.getConfig(locationConfigKey)).value, upRes.outputs.resourceGroupName.value);
+    let upRes: UpResult | undefined = undefined;
+    try {
+        await mainStack.setConfig(locationConfigKey, { value: location });
+        logBanner("updating main stack...");
+        upRes = await mainStack.up({ onOutput: console.info });
+    } catch (err) {
+        logError(`Error occurred: ${err}`);
+    }
+    finally {
+        /**
+         * Add resource group lock
+         */
+        if (upRes?.outputs?.resourceGroupName.value) {
+            await lock(lockStack, (await mainStack.getConfig(locationConfigKey)).value, upRes.outputs.resourceGroupName.value);
+        }
+        else {
+            console.log(`Output [resourceGroupName] not found from main stack. Unable to lock resource group.`);
+            process.exit(1);
+        }
+    }
 };
 
 run().catch(err => console.log(err));
